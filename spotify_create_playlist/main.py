@@ -1,5 +1,6 @@
 from typing import Optional
 
+import click
 from dotenv import load_dotenv
 from rapidfuzz import process, fuzz
 import spotipy
@@ -87,7 +88,7 @@ class PlaylistCreator:
 
         return track_uris
 
-    def get_or_create_playlist(self, name: str = "Spotipy tracks"):
+    def get_or_create_playlist(self, name: str):
         # search for existing playlist first
         playlist = self.find_user_playlist(name)
 
@@ -99,15 +100,10 @@ class PlaylistCreator:
         return playlist
 
 
-if __name__ == "__main__":
-    import sys
-
-    if not len(sys.argv) == 2:
-        print(f"Usage: {sys.argv[0]} <tracklist>")
-        sys.exit(1)
-
-    # load track list
-    filename = sys.argv[1]
+@click.command()
+@click.option("--playlist-name", default="Spotipy Playlist", help="Optional, default: Spotipy Playlist")
+@click.argument("filename")
+def run(playlist_name, filename):
     with open(filename) as f:
         lines = f.readlines()
         tracks = [line.strip(' "\n') for line in lines]
@@ -117,7 +113,7 @@ if __name__ == "__main__":
     # init spotipy
     creator = PlaylistCreator()
     creator.authenticate()
-    playlist = creator.get_or_create_playlist()
+    playlist = creator.get_or_create_playlist(playlist_name)
     playlist_id = playlist["id"]
     playlist_tracks = creator.find_playlist_tracks(playlist_id)
 
@@ -136,7 +132,7 @@ if __name__ == "__main__":
             print("TRACK HAS NO URI")
             continue
 
-        match, score = creator.compare_match(track, result)
+        _, score = creator.compare_match(track, result)
         if score < 60:
             print(f"BAD MATCH SCORE {score}")
             continue
