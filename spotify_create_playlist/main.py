@@ -1,7 +1,7 @@
 from typing import Optional
-import datetime
 
 from dotenv import load_dotenv
+from rapidfuzz import process, fuzz
 import spotipy
 from spotipy import CacheFileHandler
 from spotipy.oauth2 import SpotifyOAuth
@@ -57,8 +57,10 @@ class PlaylistCreator:
         return result
 
     def get_or_create_playlist(self, name: str = "Spotipy tracks"):
+        # search for existing playlist first
         playlist = self.find_user_playlist(name)
 
+        # create if not found
         if playlist is None:
             user = self.sp.me()["id"]
             playlist = self.sp.user_playlist_create(user, name, public = False)
@@ -66,8 +68,38 @@ class PlaylistCreator:
         return playlist
 
 
+def dedupe_tracks(filename: str) -> list[str]:
+    """Fuzzily dedupes entries in the given file."""
+    with open(filename) as f:
+        lines = f.readlines()
+
+    data = [line.strip(' "\n') for line in lines]
+
+    result = []
+    for entry in data:
+        if len(entry) == 0:
+            continue
+
+        # only append entry to results if no similar entry is present
+        _, score, _ = process.extractOne(entry, result, scorer=fuzz.token_sort_ratio) or (None, 0, None)
+        if score < 90:
+            result.append(entry)
+
+    return result
+
+
 if __name__ == "__main__":
+    import sys
+
+    if not len(sys.argv) == 2:
+        print(f"Usage: {sys.argv[0]} <tracklist>")
+        sys.exit(1)
+
+    # load file list
+    filename = sys.argv[1]
+    tracks = dedupe_tracks(filename)
+
+    # init spotipy
     creator = PlaylistCreator()
     creator.authenticate()
-
-    print(creator.get_or_create_playlist())
+    playlist = creator.get_or_create_playlist()
