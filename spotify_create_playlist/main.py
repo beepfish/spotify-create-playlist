@@ -33,6 +33,13 @@ class PlaylistCreator:
         if len(tracks) > 0:
             return tracks[0]
 
+    def compare_match(self, query: str, track: dict) -> tuple[str, int]:
+        artist = ", ".join(a["name"] for a in track["artists"])
+        track_title = track["name"]
+        s = f"{track_title} {artist}".lower()
+        match, score, _ = process.extractOne(query.lower(), [s], scorer=fuzz.token_sort_ratio) or (None, 0, None)
+        return match, score
+
     def find_user_playlist(self, name: str) -> Optional[dict]:
         result = None
         limit = 50
@@ -87,29 +94,9 @@ class PlaylistCreator:
         # create if not found
         if playlist is None:
             user = self.sp.me()["id"]
-            playlist = self.sp.user_playlist_create(user, name, public = False)
+            playlist = self.sp.user_playlist_create(user, name, public=False)
 
         return playlist
-
-
-def dedupe_tracks(filename: str) -> list[str]:
-    """Fuzzily dedupes entries in the given file."""
-    with open(filename) as f:
-        lines = f.readlines()
-
-    data = [line.strip(' "\n') for line in lines]
-
-    result = []
-    for entry in data:
-        if len(entry) == 0:
-            continue
-
-        # only append entry to results if no similar entry is present
-        _, score, _ = process.extractOne(entry, result, scorer=fuzz.token_sort_ratio) or (None, 0, None)
-        if score < 90:
-            result.append(entry)
-
-    return result
 
 
 if __name__ == "__main__":
@@ -121,8 +108,11 @@ if __name__ == "__main__":
 
     # load track list
     filename = sys.argv[1]
-    tracks = dedupe_tracks(filename)
-    num_tracks = len(tracks)
+    with open(filename) as f:
+        lines = f.readlines()
+        tracks = [line.strip(' "\n') for line in lines]
+        tracks = [t for t in tracks if not len(t) == 0]
+        num_tracks = len(tracks)
 
     # init spotipy
     creator = PlaylistCreator()
@@ -146,11 +136,19 @@ if __name__ == "__main__":
             print("TRACK HAS NO URI")
             continue
 
+        match, score = creator.compare_match(track, result)
+        if score < 60:
+            print(f"BAD MATCH SCORE {score}")
+            continue
+        else:
+            print(f"MATCH SCORE {score} --", end="")
+
         exists = playlist_tracks.get(uri)
         if exists:
             print("ALREADY ON PLAYLIST")
         else:
             print("ADDED")
+            playlist_tracks[uri] = True
             track_uris.append(uri)
 
     if len(track_uris) > 0:
